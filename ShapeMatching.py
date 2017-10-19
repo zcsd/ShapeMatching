@@ -10,6 +10,8 @@ temReadyFlag = False
 matchOverFlag = False
 temConfirmFlag = False
 templeteVector = []
+sampleVectors = []
+sampleContours = []
 
 def selectTemplete(event, x, y, flags, param):
     global rect, temSeleteFlag, temReadyFlag, ix, iy
@@ -31,13 +33,9 @@ def getContours(img):
     imgthresholdNot = cv2.bitwise_not(imgthreshold)
     kernel = np.ones((5,5), np.uint8)
     imgdilation = cv2.dilate(imgthresholdNot, kernel, iterations=2)
-    #cv2.RETR_EXTERNAL,TREE
     imgcontours, contours, hierarchy = cv2.findContours(imgdilation, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    #print contours.size
-    imgdrawContours = np.zeros((imgray.shape[0],imgray.shape[1], 3), np.uint8)
-    cv2.drawContours(imgdrawContours, contours, -1, (255, 255, 255), 1)
-
-    #print len(contours)
+    #imgdrawContours = np.zeros((imgray.shape[0],imgray.shape[1], 3), np.uint8)
+    #cv2.drawContours(imgdrawContours, contours, -1, (255, 255, 255), 1)
                 
     #cv2.imshow("Original Gray", imgray)
     #cv2.imshow("Threshold", imgthreshold)
@@ -53,11 +51,27 @@ def getTempleteCV():
     for cnt in tpContour:
         x, y, w, h = cv2.boundingRect(cnt)
         for point in cnt:
-            templeteVector.append( (point[0][0]-x, point[0][1]-y) )
+            templeteVector.append( complex(point[0][0]-x, point[0][1]-y) )
 
-def getSampleCV():
+def getSampleCV(spContour):
+    x, y, w, h = cv2.boundingRect(spContour)
+    sampleVector = []
+    for point in spContour:
+        sampleVector.append( complex(point[0][0]-x, point[0][1]-y) )
+    sampleVectors.append(sampleVector)
+    sampleContours.append(spContour)
+
+def getsampleFTs():
+    FTs = []
+    for sampleVector in sampleVectors:
+        sampleFT = np.fft.fft(sampleVector)
+        FTs.append(sampleFT)
+
+    return FTs    
+
+def match(tp, sps):
     pass
-                           
+
 # Main loop
 imgOri = cv2.imread("a2.bmp", 1)
 imgOricpy = imgOri.copy()
@@ -72,13 +86,19 @@ while(True):
         contours = getContours(imgOricpy)
         cv2.drawContours(imgOri, contours, -1, (0, 0, 255), 1)
         for contour in contours:
+            getSampleCV(contour);
             x, y, w, h = cv2.boundingRect(contour)
             cv2.rectangle(imgOri, (x,y), (x+w,y+h), (0,255,0), 1)
             #rect = cv2.minAreaRect(contour)
             #box = cv2.boxPoints(rect)
             #box = np.int0(box)
             #cv2.drawContours(imgOri, [box],0,(0,255,0),1)
-            
+        #print sampleVectors[1]
+
+        tpFT = np.fft.fft(templeteVector)
+        sampleFTs = getsampleFTs()
+        match(tpFT, sampleFTs)
+        
         matchOverFlag = True
         
     key = cv2.waitKey(1) & 0xFF
