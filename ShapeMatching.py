@@ -1,5 +1,6 @@
 import numpy as np
 import cv2
+import math
 
 print "Shape Matching Using Fourier Descriptor"
 
@@ -69,8 +70,38 @@ def getsampleFTs():
 
     return FTs    
 
+def normalize(vectors):
+
+    normVectors = []
+    for i in range(0,12):
+        temp = np.linalg.norm(vectors[i])
+        normVectors.append(vectors[i]/temp)
+
+    return normVectors    
+
+def norm(v1, v2):
+    summ = 0
+    for i in range(0,12):
+        ireal = v1[i].real-v2[i].real
+        iimag = v1[i].imag-v2[i].imag
+        summ = summ + pow(ireal,2) + pow(iimag,2)
+
+    return math.sqrt(summ)
+
 def match(tp, sps):
-    pass
+    
+    ntp = normalize(tp)
+    dist = []
+    for sp in sps:
+        nsp = normalize(sp)
+        dist.append(norm(ntp,nsp))
+        #print nsp
+        #dist.append( np.linalg.norm(np.array(nsp)-np.array(ntp)) )
+        #dist.append(cv2.norm(np.array(nsp),np.array(ntp),cv2.NORM_L2))
+        print dist[len(dist)-1]      
+
+    x, y, w, h = cv2.boundingRect(sampleContours[5])    
+    cv2.rectangle(imgOri, (x,y), (x+w,y+h), (0,0,255), 2)
 
 # Main loop
 imgOri = cv2.imread("a2.bmp", 1)
