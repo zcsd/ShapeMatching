@@ -1,9 +1,11 @@
 import numpy as np
 import cv2
 import math
+#from scipy.spatial import distance
 
 print "Shape Matching Using Fourier Descriptor"
 
+manually = False
 rect = (0, 0, 1, 1)
 ix, iy = -1, -1
 temSeleteFlag = False
@@ -33,7 +35,7 @@ def getContours(img):
     retvalth, imgthreshold = cv2.threshold(imgray, 50, 255, cv2.THRESH_BINARY)
     imgthresholdNot = cv2.bitwise_not(imgthreshold)
     kernel = np.ones((5,5), np.uint8)
-    imgdilation = cv2.dilate(imgthresholdNot, kernel, iterations=2)
+    imgdilation = cv2.dilate(imgthresholdNot[360:450,330:440], kernel, iterations=2)
     imgcontours, contours, hierarchy = cv2.findContours(imgdilation, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     #imgdrawContours = np.zeros((imgray.shape[0],imgray.shape[1], 3), np.uint8)
     #cv2.drawContours(imgdrawContours, contours, -1, (255, 255, 255), 1)
@@ -52,7 +54,7 @@ def getTempleteCV():
     for cnt in tpContour:
         x, y, w, h = cv2.boundingRect(cnt)
         for point in cnt:
-            templeteVector.append( complex(point[0][0]-x, point[0][1]-y) )
+            templeteVector.append( complex(point[0][0]-x, point[0][1]-y))
 
 def getSampleCV(spContour):
     x, y, w, h = cv2.boundingRect(spContour)
@@ -70,6 +72,50 @@ def getsampleFTs():
 
     return FTs    
 
+def rotataionInvariant(fourierDesc):
+    for index, value in enumerate(fourierDesc):
+        fourierDesc[index] = np.absolute(value)
+
+    return fourierDesc    
+
+def scaleInvariant(fourierDesc):
+    firstVal = fourierDesc[0]
+
+    for index, value in enumerate(fourierDesc):
+        fourierDesc[index] = value / firstVal
+
+    return fourierDesc
+
+def transInvariant(fourierDesc):
+    return fourierDesc[1:len(fourierDesc)]
+
+# Gets the lowest X of frequency values from the fourier values.
+# Places back into the correct order.
+def getLowFreqFD(fourierDesc, noKeep):
+    fourierFreq = np.fft.fftfreq(len(fourierDesc))
+
+    frequencyIndices= []
+    for index, val in enumerate(fourierFreq):
+        frequencyIndices.append([index, val])
+
+    # Sorts on absolute value of frequency (want negative and positive).
+    frequencyIndices.sort(key = lambda tuple: abs(tuple[1]))
+
+    rawValues  = []
+    for i in range(0, noKeep):
+        index = frequencyIndices[i][0]
+        rawValues.append([fourierDesc[index], index])
+
+    # Sort based on original ordering.
+    rawValues.sort(key = lambda tuple: tuple[1])
+
+    # Strip out indices used for sorting.
+    values  = []
+    for value in rawValues:
+        values.append(value[0])
+
+    return values
+'''    
 def normalize(vectors):
 
     normVectors = []
@@ -78,18 +124,40 @@ def normalize(vectors):
         normVectors.append(vectors[i]/temp)
 
     return normVectors    
-
+'''
 def norm(v1, v2):
     summ = 0
-    for i in range(0,12):
+    for i in range(0,5):
         ireal = v1[i].real-v2[i].real
         iimag = v1[i].imag-v2[i].imag
         summ = summ + pow(ireal,2) + pow(iimag,2)
 
     return math.sqrt(summ)
 
+
+def finalFD(fourierDesc):
+    fourierDesc = rotataionInvariant(fourierDesc)
+    fourierDesc = scaleInvariant(fourierDesc)
+    fourierDesc = transInvariant(fourierDesc)
+    fourierDesc = getLowFreqFD1(fourierDesc, 5)
+
+    return fourierDesc
+
+def getLowFreqFD1(fourierDesc, noKeep):
+    return fourierDesc[:5]
+
 def match(tp, sps):
-    
+    tp = finalFD(tp)
+    dist = []
+    for sp in sps:
+        sp = finalFD(sp)
+        dist.append(norm(tp,sp))
+        #dist.append( np.linalg.norm(np.array(sp)-np.array(tp)) )
+        print str(len(dist)-1) + ": " + str(dist[len(dist)-1])
+    x, y, w, h = cv2.boundingRect(sampleContours[14])    
+    cv2.rectangle(imgOri, (x,y), (x+w,y+h), (0,0,255), 2)     
+
+'''    
     ntp = normalize(tp)
     dist = []
     for sp in sps:
@@ -102,13 +170,21 @@ def match(tp, sps):
 
     x, y, w, h = cv2.boundingRect(sampleContours[5])    
     cv2.rectangle(imgOri, (x,y), (x+w,y+h), (0,0,255), 2)
-
+'''
 # Main loop
 imgOri = cv2.imread("a2.bmp", 1)
 imgOricpy = imgOri.copy()
 cv2.namedWindow("Original Image")
-cv2.setMouseCallback("Original Image", selectTemplete)
 
+if manually == True:
+    cv2.setMouseCallback("Original Image", selectTemplete)
+else:
+    rect = (50, 100, 130, 160)
+    cv2.rectangle(imgOri, (50, 100), (180,260), (255,0,0), 2)
+    temReadyFlag = True
+    temConfirmFlag = True
+    
+    
 while(True):
     cv2.imshow("Original Image", imgOri)
     
@@ -128,9 +204,13 @@ while(True):
 
         tpFT = np.fft.fft(templeteVector)
         sampleFTs = getsampleFTs()
+        
         match(tpFT, sampleFTs)
         
         matchOverFlag = True
+        imgShow = cv2.resize(imgOri, None, fx=0.5, fy=0.5, interpolation=cv2.INTER_CUBIC)
+        cv2.imshow("show", imgShow)
+
         
     key = cv2.waitKey(1) & 0xFF
     if key == ord('y') or key == ord('Y'):
