@@ -1,21 +1,23 @@
 import numpy as np
 import cv2
-import math
-#from scipy.spatial import distance
 
 print "Shape Matching Using Fourier Descriptor"
 
-manually = False
-rect = (0, 0, 1, 1)
+distThreshold = 0.08
 ix, iy = -1, -1
+rect = (0, 0, 1, 1)
+
+manually = False
 temSeleteFlag = False
 temReadyFlag = False
-matchOverFlag = False
 temConfirmFlag = False
-templeteVector = []
-sampleVectors = []
+matchOverFlag = False
+
+templeteComVector = []
+sampleComVectors = []
 sampleContours = []
 
+# Manually select templete by mouse, On/Off by manually flag
 def selectTemplete(event, x, y, flags, param):
     global rect, temSeleteFlag, temReadyFlag, ix, iy
 
@@ -25,59 +27,80 @@ def selectTemplete(event, x, y, flags, param):
        
     elif event == cv2.EVENT_LBUTTONUP:
         if temReadyFlag == False and temSeleteFlag == True:
+            # rect is selected templete ROI
             rect = (min(ix,x), min(iy,y), abs(ix-x), abs(iy-y))
+            # draw a blue rectangle after selection
             cv2.rectangle(imgOri, (ix,iy), (x,y), (255,0,0), 2)
         temSeleteFlag = False
         temReadyFlag = True
 
+# Main findcontour function 
 def getContours(img):
     imgray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    # Threshold white paper(background) to white pixel(255), word is actully black(0)
     retvalth, imgthreshold = cv2.threshold(imgray, 50, 255, cv2.THRESH_BINARY)
+    # We want words are white, backgournd is black, easy for opencv findcontour function
     imgthresholdNot = cv2.bitwise_not(imgthreshold)
+    # Dilation make all 6 to form a closed loop
     kernel = np.ones((5,5), np.uint8)
-    imgdilation = cv2.dilate(imgthresholdNot[360:450,330:440], kernel, iterations=2)
-    imgcontours, contours, hierarchy = cv2.findContours(imgdilation, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    #imgdrawContours = np.zeros((imgray.shape[0],imgray.shape[1], 3), np.uint8)
-    #cv2.drawContours(imgdrawContours, contours, -1, (255, 255, 255), 1)
-                
-    #cv2.imshow("Original Gray", imgray)
-    #cv2.imshow("Threshold", imgthreshold)
-    #cv2.imshow("Contours", imgcontours)
-    #imgcontourShow = cv2.resize(imgdrawContours, None, fx=0.5, fy=0.5, interpolation=cv2.INTER_CUBIC)
-    #cv2.imshow("drawcontours", imgcontourShow)
+    imgdilation = cv2.dilate(imgthresholdNot, kernel, iterations=2)
+    # Must use EXTERNAL outer contours, Must use CHAIN_APPROX_NONE method(not change points)
+    imgcontours, contours, hierarchy = cv2.findContours(imgdilation, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+    
     return contours
 
+# Get complex vector of templete contour
 def getTempleteCV():
+    # This is the templete region that we select by mouse or default
     templeteROI = imgOricpy[rect[1]:rect[1]+rect[3], rect[0]:rect[0]+rect[2]]
+    # Automatically find templete contour
     tpContour = getContours(templeteROI)
 
-    for cnt in tpContour:
-        x, y, w, h = cv2.boundingRect(cnt)
-        for point in cnt:
-            templeteVector.append( complex(point[0][0]-x, point[0][1]-y))
+    for contour in tpContour:
+        x, y, w, h = cv2.boundingRect(contour)
+        for point in contour:
+            # -x and -y are to make left and upper boundry start from 0
+            templeteComVector.append( complex(point[0][0]-x, (point[0][1]-y)))
 
-def getSampleCV(spContour):
-    x, y, w, h = cv2.boundingRect(spContour)
-    sampleVector = []
-    for point in spContour:
-        sampleVector.append( complex(point[0][0]-x, point[0][1]-y) )
-    sampleVectors.append(sampleVector)
-    sampleContours.append(spContour)
+# Get complex vectors of testees contours
+def getSampleCV():
+    spContours = getContours(imgOricpy)       
+    cv2.drawContours(imgOri, spContours, -1, (0, 0, 255), 1)
+    
+    for contour in spContours:
+        sampleComVector = []
+        x, y, w, h = cv2.boundingRect(contour)
+        cv2.rectangle(imgOri, (x,y), (x+w,y+h), (0,255,0), 1)
 
-def getsampleFTs():
-    FTs = []
-    for sampleVector in sampleVectors:
-        sampleFT = np.fft.fft(sampleVector)
-        FTs.append(sampleFT)
+        for point in contour:
+            sampleComVector.append( complex(point[0][0]-x, (point[0][1]-y)) )
+        # sampleComVectors store CV of all testees contours 
+        sampleComVectors.append(sampleComVector)
+        # sampleContours store all testees contours, same order with sampleComVectors
+        sampleContours.append(contour)
 
-    return FTs    
+# Calculate fourier transform of templete CV
+def getempleteFD():
+    
+    return np.fft.fft(templeteComVector)
 
+# Calculate fourier transform of sample CVs
+def getsampleFDs():
+    FDs = []
+    for sampleVector in sampleComVectors:
+        sampleFD = np.fft.fft(sampleVector)
+        FDs.append(sampleFD)
+
+    return FDs    
+
+# Make fourier descriptor invariant to rotaition and start point
 def rotataionInvariant(fourierDesc):
     for index, value in enumerate(fourierDesc):
         fourierDesc[index] = np.absolute(value)
 
     return fourierDesc    
 
+# Make fourier descriptor invariant to scale
 def scaleInvariant(fourierDesc):
     firstVal = fourierDesc[0]
 
@@ -86,137 +109,85 @@ def scaleInvariant(fourierDesc):
 
     return fourierDesc
 
+# Make fourier descriptor invariant to translation
 def transInvariant(fourierDesc):
+    
     return fourierDesc[1:len(fourierDesc)]
 
-# Gets the lowest X of frequency values from the fourier values.
-# Places back into the correct order.
-def getLowFreqFD(fourierDesc, noKeep):
-    fourierFreq = np.fft.fftfreq(len(fourierDesc))
+# Get the lowest X of frequency values from the fourier values.
+def getLowFreqFDs(fourierDesc):
+    # frequence order returned by np.fft is (0, 0.1, 0.2, 0.3, ...... , -0.3, -0.2, -0.1)
+    # Note: in transInvariant(), we already remove first FD(0 frequency)
+    # So the first X/2 and last X/2 combine to X
+    return fourierDesc[:5]
 
-    frequencyIndices= []
-    for index, val in enumerate(fourierFreq):
-        frequencyIndices.append([index, val])
-
-    # Sorts on absolute value of frequency (want negative and positive).
-    frequencyIndices.sort(key = lambda tuple: abs(tuple[1]))
-
-    rawValues  = []
-    for i in range(0, noKeep):
-        index = frequencyIndices[i][0]
-        rawValues.append([fourierDesc[index], index])
-
-    # Sort based on original ordering.
-    rawValues.sort(key = lambda tuple: tuple[1])
-
-    # Strip out indices used for sorting.
-    values  = []
-    for value in rawValues:
-        values.append(value[0])
-
-    return values
-'''    
-def normalize(vectors):
-
-    normVectors = []
-    for i in range(0,12):
-        temp = np.linalg.norm(vectors[i])
-        normVectors.append(vectors[i]/temp)
-
-    return normVectors    
-'''
-def norm(v1, v2):
-    summ = 0
-    for i in range(0,5):
-        ireal = v1[i].real-v2[i].real
-        iimag = v1[i].imag-v2[i].imag
-        summ = summ + pow(ireal,2) + pow(iimag,2)
-
-    return math.sqrt(summ)
-
-
+# Get the final FD that we want to use to calculate distance
 def finalFD(fourierDesc):
     fourierDesc = rotataionInvariant(fourierDesc)
     fourierDesc = scaleInvariant(fourierDesc)
     fourierDesc = transInvariant(fourierDesc)
-    fourierDesc = getLowFreqFD1(fourierDesc, 5)
+    fourierDesc = getLowFreqFDs(fourierDesc)
 
     return fourierDesc
 
-def getLowFreqFD1(fourierDesc, noKeep):
-    return fourierDesc[:5]
-
-def match(tp, sps):
-    tp = finalFD(tp)
+# Core match function
+def match(tpFD, spFDs):
+    tpFD = finalFD(tpFD)
+    # dist store the distance, same order as spContours
     dist = []
-    for sp in sps:
-        sp = finalFD(sp)
-        dist.append(norm(tp,sp))
-        #dist.append( np.linalg.norm(np.array(sp)-np.array(tp)) )
-        print str(len(dist)-1) + ": " + str(dist[len(dist)-1])
-    x, y, w, h = cv2.boundingRect(sampleContours[14])    
-    cv2.rectangle(imgOri, (x,y), (x+w,y+h), (0,0,255), 2)     
+    
+    for spFD in spFDs:
+        spFD = finalFD(spFD)
+        # Calculate Euclidean distance between templete and testee
+        dist.append( np.linalg.norm(np.array(spFD)-np.array(tpFD)) )
+        print str(len(dist)) + ": " + str(dist[len(dist)-1])
+        # if distance is less than threshold, it will be good match.
+        if dist[len(dist)-1] < distThreshold:
+            x, y, w, h = cv2.boundingRect(sampleContours[len(dist)-1])    
+            cv2.rectangle(imgOri, (x,y), (x+w,y+h), (0,0,255), 2)
 
-'''    
-    ntp = normalize(tp)
-    dist = []
-    for sp in sps:
-        nsp = normalize(sp)
-        dist.append(norm(ntp,nsp))
-        #print nsp
-        #dist.append( np.linalg.norm(np.array(nsp)-np.array(ntp)) )
-        #dist.append(cv2.norm(np.array(nsp),np.array(ntp),cv2.NORM_L2))
-        print dist[len(dist)-1]      
-
-    x, y, w, h = cv2.boundingRect(sampleContours[5])    
-    cv2.rectangle(imgOri, (x,y), (x+w,y+h), (0,0,255), 2)
-'''
+# -------------------------------------------------------------------------- 
 # Main loop
 imgOri = cv2.imread("a2.bmp", 1)
+# imOricpy is for processing, imgOri is for showing
 imgOricpy = imgOri.copy()
 cv2.namedWindow("Original Image")
 
 if manually == True:
+    # Manually select templete by mouse
     cv2.setMouseCallback("Original Image", selectTemplete)
 else:
+    # Default region: upper 6
     rect = (50, 100, 130, 160)
     cv2.rectangle(imgOri, (50, 100), (180,260), (255,0,0), 2)
     temReadyFlag = True
-    temConfirmFlag = True
-    
+    temConfirmFlag = True   
     
 while(True):
+    
     cv2.imshow("Original Image", imgOri)
     
     if temReadyFlag == True and matchOverFlag == False and temConfirmFlag == True:
-        getTempleteCV();
-        contours = getContours(imgOricpy)
-        cv2.drawContours(imgOri, contours, -1, (0, 0, 255), 1)
-        for contour in contours:
-            getSampleCV(contour);
-            x, y, w, h = cv2.boundingRect(contour)
-            cv2.rectangle(imgOri, (x,y), (x+w,y+h), (0,255,0), 1)
-            #rect = cv2.minAreaRect(contour)
-            #box = cv2.boxPoints(rect)
-            #box = np.int0(box)
-            #cv2.drawContours(imgOri, [box],0,(0,255,0),1)
-        #print sampleVectors[1]
-
-        tpFT = np.fft.fft(templeteVector)
-        sampleFTs = getsampleFTs()
-        
-        match(tpFT, sampleFTs)
+        # Get complex vector
+        getTempleteCV()
+        getSampleCV()
+        # Get fourider descriptor
+        tpFD = getempleteFD()
+        sampleFDs = getsampleFDs()
+        # real match function
+        match(tpFD, sampleFDs)
         
         matchOverFlag = True
+        # Resize img for showing
         imgShow = cv2.resize(imgOri, None, fx=0.5, fy=0.5, interpolation=cv2.INTER_CUBIC)
         cv2.imshow("show", imgShow)
 
-        
     key = cv2.waitKey(1) & 0xFF
     if key == ord('y') or key == ord('Y'):
+        # Press Y for templete confirm once mouse selection done
         temConfirmFlag = True
-    elif key == ord('q') or key == ord('Q'):    
+    elif key == ord('q') or key == ord('Q'):
+        # Press q for quit
         break
  
 cv2.destroyAllWindows()
-
