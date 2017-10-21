@@ -65,12 +65,12 @@ def getTempleteCV():
 # Get complex vectors of testees contours
 def getSampleCV():
     spContours = getContours(imgOricpy)       
-    cv2.drawContours(imgOri, spContours, -1, (0, 0, 255), 1)
+    # cv2.drawContours(imgOri, spContours, -1, (0, 0, 255), 1)
     
     for contour in spContours:
         sampleComVector = []
         x, y, w, h = cv2.boundingRect(contour)
-        cv2.rectangle(imgOri, (x,y), (x+w,y+h), (0,255,0), 1)
+        cv2.rectangle(imgOri, (x,y), (x+w,y+h), (100,100,100), 1)
 
         for point in contour:
             sampleComVector.append( complex(point[0][0]-x, (point[0][1]-y)) )
@@ -118,7 +118,7 @@ def transInvariant(fourierDesc):
 def getLowFreqFDs(fourierDesc):
     # frequence order returned by np.fft is (0, 0.1, 0.2, 0.3, ...... , -0.3, -0.2, -0.1)
     # Note: in transInvariant(), we already remove first FD(0 frequency)
-    # So the first X/2 and last X/2 combine to X
+
     return fourierDesc[:5]
 
 # Get the final FD that we want to use to calculate distance
@@ -135,16 +135,19 @@ def match(tpFD, spFDs):
     tpFD = finalFD(tpFD)
     # dist store the distance, same order as spContours
     dist = []
-    
+    font = cv2.FONT_HERSHEY_SIMPLEX
     for spFD in spFDs:
         spFD = finalFD(spFD)
         # Calculate Euclidean distance between templete and testee
         dist.append( np.linalg.norm(np.array(spFD)-np.array(tpFD)) )
-        print str(len(dist)) + ": " + str(dist[len(dist)-1])
+        x, y, w, h = cv2.boundingRect(sampleContours[len(dist)-1])
+        # Draw distance on image
+        distText = str(round(dist[len(dist)-1],2))
+        cv2.putText(imgOri,distText,(x,y-8), font,0.5,(0,0,0),1,cv2.LINE_AA)
+        # print str(len(dist)) + ": " + str(dist[len(dist)-1])
         # if distance is less than threshold, it will be good match.
-        if dist[len(dist)-1] < distThreshold:
-            x, y, w, h = cv2.boundingRect(sampleContours[len(dist)-1])    
-            cv2.rectangle(imgOri, (x,y), (x+w,y+h), (0,0,255), 2)
+        if dist[len(dist)-1] < distThreshold:   
+            cv2.rectangle(imgOri, (x-5,y-5), (x+w+5,y+h+5), (40,255,0), 2)
 
 # -------------------------------------------------------------------------- 
 # Main loop
@@ -178,9 +181,10 @@ while(True):
         match(tpFD, sampleFDs)
         
         matchOverFlag = True
+        cv2.imwrite("result.jpg", imgOri)
         # Resize img for showing
-        imgShow = cv2.resize(imgOri, None, fx=0.5, fy=0.5, interpolation=cv2.INTER_CUBIC)
-        cv2.imshow("show", imgShow)
+        imgShow = cv2.resize(imgOri, None, fx=0.66, fy=0.66, interpolation=cv2.INTER_CUBIC)
+        cv2.imshow("Small Size Show", imgShow)
 
     key = cv2.waitKey(1) & 0xFF
     if key == ord('y') or key == ord('Y'):
